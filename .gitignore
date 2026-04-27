@@ -1,0 +1,28 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.env
+*.log
+
+# --- Docker ---
+docker_data/
+mysql_data/
+mariadb_data/
+
+# --- Database / MariaDB ---
+*.sql
+*.sqlite
+
+# --- IDE ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Template / Jinja2 ---
+.sass-cache/
+*.swp

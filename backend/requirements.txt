@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+pydantic
+crawl4ai
+playwright
+mistune==3.0.2
+beautifulsoup4==4.12.3

@@ -1,0 +1,32 @@
+services:
+  # Servizio Backend (Porta 8003)
+  backend:
+    build:
+      context: ./backend  # Path relativo alla cartella del backend
+      dockerfile: Dockerfile
+    container_name: backend_container
+    ports:
+      - "8003:8003"  # Mappa la porta 8003 dell'host a quella del container
+    volumes:
+      # Fondamentale per i path relativi: mappa la cartella locale gs_data
+      # così il server può leggere i JSON del Gold Standard
+      - ./gs_data:/app/gs_data
+      # Nuova riga: mappa il file dei domini dalla root al container
+      - ./domains.json:/app/domains.json
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  # Servizio Frontend (Porta 8004)
+  frontend:
+    build:
+      context: ./frontend # Path relativo alla cartella del frontend
+      dockerfile: Dockerfile
+    container_name: frontend_container
+    ports:
+      - "8004:8004"
+    environment:
+      # In Docker, i container si parlano usando il nome del servizio.
+      # Quindi il frontend cercherà il backend su "http://backend:8003"
+      - BACKEND_API_URL=http://backend:8003
+    depends_on:
+      - backend # Avvia il backend prima del frontend
