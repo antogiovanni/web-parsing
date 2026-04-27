@@ -61,19 +61,19 @@ def ottieni_domini():
 async def esegui_get_parse(url: str = Query(...)):
     dominio = urlparse(url).netloc
     
-    # 1. CONTROLLO DOMINIO RIGOROSO (Risolve l'errore "dominio non supportato")
+    # Controllo dominio
     if os.path.exists("domains.json"):
         with open("domains.json", "r", encoding="utf-8") as f:
             domini_validi = json.load(f)
             if dominio not in domini_validi:
                 raise HTTPException(status_code=400, detail="Dominio non supportato")
 
-    #risolve incoerenza treccani?
+    # Risolve incoerenza treccani?
     html_salvato = None
     try:
         gs = await recupera_full_gold_standard(dominio)
         for entry in gs.get("gold_standard", []):
-            # Rimuoviamo gli slash finali (/) per fare un confronto a prova di bomba
+            # Rimuoviamo gli slash finali (/)
             url_salvato = entry.get("url", "").rstrip("/")
             url_richiesto = url.rstrip("/")
             
@@ -85,7 +85,7 @@ async def esegui_get_parse(url: str = Query(...)):
 
     risultato = await esegui_estrazione(url=url, html_text=html_salvato)
 
-    #Controllo pagina vuota/404
+    # Controllo pagina vuota/404
     if not risultato.success or not risultato.parsed_text or risultato.parsed_text.strip() == "":
         raise HTTPException(status_code=400, detail="URL irraggiungibile o pagina vuota")
 
@@ -114,88 +114,54 @@ async def esegui_post_parse(dati: RichiestaParse):
 async def recupera_gold_standard(url: str = Query(..., description="L'URL di cui cercare il Gold Standard")):
     dominio = urlparse(url).netloc
     nome_file = f"{dominio}_gs.json"
-    
 
-    #Creiamo una mappa dei possibili nascondigli del file
-    cartella_corrente = os.path.dirname(os.path.abspath(__file__))
-    possibili_percorsi = [
-        os.path.join(cartella_corrente, "gs_data", nome_file),                             # Se è nella stessa cartella di server.py
-        os.path.join(os.path.dirname(cartella_corrente), "gs_data", nome_file),            # Una cartella indietro
-        os.path.join(os.path.dirname(os.path.dirname(cartella_corrente)), "gs_data", nome_file) # Due cartelle indietro
-    ]
-    
-    #Cerchiamo il file
-    file_path_corretto = None
-    for path in possibili_percorsi:
-        if os.path.exists(path):
-            file_path_corretto = path
-            break
+    cartella_base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Dalla cartella principale, entriamo in gs_data e puntiamo al file
+    percorso_file = os.path.join(cartella_base, "gs_data", nome_file)
+
+    if os.path.exists(percorso_file):
+        try:
+            with open(percorso_file, "r", encoding="utf-8") as f:
+                dati = json.load(f)
+        
+            for elemento in dati.get("gold_standard", []):
+                if elemento.get("url") == url:
+                    print(f"URL '{url}' trovato all'interno del JSON!")
+                    return elemento
             
-    # --- CASO A: IL FILE NON ESISTE ---
-    if not file_path_corretto:
-        print(f"\n ERRORE: File {nome_file} non trovato!")
-        print("Ho cercato in questi percorsi esatti:")
-        for p in possibili_percorsi:
-            print(f"   - {p}")
-        raise HTTPException(status_code=404, detail="File JSON non trovato!")
-        
-    print(f"\n✅ File JSON trovato esattamente in: {file_path_corretto}")
-    
-    # Se lo trova, lo apre e cerca l'URL
-    try:
-        with open(file_path_corretto, "r", encoding="utf-8") as f:
-            dati = json.load(f)
-    
-        for elemento in dati.get("gold_standard", []):
-            if elemento.get("url") == url:
-                print(f"✅ URL '{url}' trovato all'interno del JSON!")
-                # RESTITUISCI DIRETTAMENTE L'INTERO ELEMENTO
-                return elemento
-        # --- CASO B: FILE TROVATO, MA URL MANCANTE ---
-        print(f" ERRORE: Ho aperto il file, ma non c'è nessun blocco con url: '{url}'")
-        raise HTTPException(status_code=404, detail="L'URL non è presente nel file JSON.")
-        
-    except json.JSONDecodeError:
-        print("ERRORE: Il file JSON è scritto male e Python non riesce a leggerlo.")
-        raise HTTPException(status_code=500, detail="Il file JSON è corrotto o malformato.")
+            print(f" ERRORE: file accessibile ma url: '{url}' mancante")
+            raise HTTPException(status_code=404, detail="L'URL non è presente nel file JSON del Gold Standard.")
+            
+        except json.JSONDecodeError:
+            print("ERRORE: non è possibile eseguire lettura o file scritto male.")
+            raise HTTPException(status_code=500, detail="Il file JSON è corrotto o malformato.")
+    else:
+        raise HTTPException(status_code=404, detail="File del Gold Standard non trovato per questo dominio.")
 
 @app.get("/full_gold_standard")
 async def recupera_full_gold_standard(domain: str = Query(..., description="Il dominio da cercare")):
     
-    # Trucchetto: se il grader manda un url completo per sbaglio, prendiamo solo il dominio
+    # Se il grader invia un url completo prendiamo solo il dominio
     if "http" in domain:
         dominio_pulito = urlparse(domain).netloc
     else:
         dominio_pulito = domain
         
     nome_file = f"{dominio_pulito}_gs.json"
-    
-    # Cerchiamo il file nei soliti percorsi
-    cartella_corrente = os.path.dirname(os.path.abspath(__file__))
-    possibili_percorsi = [
-        os.path.join(cartella_corrente, "gs_data", nome_file),
-        os.path.join(os.path.dirname(cartella_corrente), "gs_data", nome_file),
-        os.path.join(os.path.dirname(os.path.dirname(cartella_corrente)), "gs_data", nome_file),
-        os.path.join("/app", "gs_data", nome_file) # Indirizzo sicuro per Docker
-    ]
-    
-    file_path_corretto = None
-    for path in possibili_percorsi:
-        if os.path.exists(path):
-            file_path_corretto = path
-            break
-            
-    # Gestione Errore specificata nella slide
-    if not file_path_corretto:
-        raise HTTPException(status_code=404, detail="Dominio non supportato.")
-        
-    # Restituisce l'intero JSON esattamente come richiesto
-    try:
-        with open(file_path_corretto, "r", encoding="utf-8") as f:
-            dati = json.load(f)
-            return dati # Restituisce {"gold_standard": [ {...}, {...} ]}
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Il file JSON è corrotto.")
+    cartella_base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    percorso_file = os.path.join(cartella_base, "gs_data", nome_file)
+
+    if os.path.exists(percorso_file):
+        try:
+            with open(percorso_file, "r", encoding="utf-8") as f:
+                dati = json.load(f)
+                # Restituisce l'intero contenuto
+                return dati 
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=500, detail="Il file JSON è corrotto o malformato.")
+    else:
+        raise HTTPException(status_code=404, detail="Dominio non supportato o Gold Standard non trovato.")
 
 @app.post("/evaluate", response_model=RispostaValutazione)
 async def valuta_parsing(dati: RichiestaValutazione):
@@ -209,7 +175,7 @@ async def valuta_parsing(dati: RichiestaValutazione):
         if not tokens_p or not tokens_g:
             return RispostaValutazione(token_level_eval=TokenLevelEval(precision=0.0, recall=0.0, f1=0.0))
 
-        # Usiamo Counter per fare l'intersezione "Bag of Words" come fa il Professore!
+        # Counter per fare l'intersezione "Bag of Words"
         c_p = Counter(tokens_p)
         c_g = Counter(tokens_g)
         intersezione = sum((c_p & c_g).values())
@@ -255,7 +221,6 @@ async def valutazione_aggregata(domain: str = Query(...)):
         tokens_g = testo_g_pulito.lower().split()
 
         if tokens_p and tokens_g:
-            # Anche qui usiamo il Counter
             c_p = Counter(tokens_p)
             c_g = Counter(tokens_g)
             intersezione = sum((c_p & c_g).values())
